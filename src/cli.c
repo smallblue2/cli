@@ -56,7 +56,7 @@ int cli_print(cmd_t *cmd) {
       printf("\t\t%s\n", opt);
     }
     printf("\tFLAGS:\n");
-    c_parray_t *flags = cmd->action->options;
+    c_parray_t *flags = cmd->action->flags;
     for (int i = 0; i < parray_length(flags); i++) {
       char *flag = (char*)parray_get(flags, i);
       if (flag == NULL) {
@@ -79,6 +79,7 @@ cmd_t *create_group(const char *name, const char *desc) {
   new_cmd->group->children = parray_create();
 
   // Add parray to global parray for easy cleanup
+  parray_append(__CLI_PARRAY_TRACKER, &new_cmd->group->children, sizeof(c_parray_t**));
 
   return new_cmd;
 }
@@ -103,9 +104,9 @@ cmd_t *cli_init(char **argv, const char *desc) {
 
 void cli_cleanup() {
   for (int i = 0; i < parray_length(__CLI_PARRAY_TRACKER); i++) {
-    c_parray_t *parray = (c_parray_t*)parray_get(__CLI_PARRAY_TRACKER, i);
+    c_parray_t **parray = (c_parray_t**)parray_get(__CLI_PARRAY_TRACKER, i);
     if (parray == NULL) exit(1);
-    parray_free(parray);
+    parray_free(*parray);
   }
   parray_free(__CLI_PARRAY_TRACKER);
   arena_free(__CLI_TREE_ARENA);
@@ -151,7 +152,7 @@ finished:
       cmd_t *child = (cmd_t*)parray_get(children, i);
       if (child == NULL) exit(1);
       // If we find a match, go to it
-      if (strncmp(child->name, cur_str, sizeof(char) * (strlen(cur_str) + 1)) == 0) {
+      if (strncmp(child->name, cur_str, sizeof(char) * strlen(cur_str)) == 0) {
         ctx->consumed++;
         return __cli_exec_ctx(child, argc, argv, ctx);
       }
@@ -165,12 +166,13 @@ finished:
   // Is the next item a flag?
   if (*cur_str == '-') {
     // If it is exactly "--", set the options only flag
-    if (strncmp(argv[ctx->consumed], "--", 3)) {
+    if (strncmp(argv[ctx->consumed], "--", 2) == 0) {
       ctx->options_only = true;
     } else {
       // Consume all hyphens - just want to store the flag name
       if (*(cur_str + 1) == '-') cur_str += 2;
       else cur_str++;
+      // TODO: MAKE SURE IT'S NOT EMPTY
       parray_append(ctx->flags, cur_str, sizeof(char) * (strlen(cur_str) + 1));
     }
     ctx->consumed++;
@@ -198,16 +200,14 @@ int cli_exec(cmd_t *root, int argc, char **argv) {
   if (ctx->flags == NULL) return 1;
   ctx->options = parray_create();
   if (ctx->options == NULL) {
-    parray_free(ctx->flags);
     return 1;
   }
 
-  int result = __cli_exec_ctx(root, argc, argv, ctx);
+  // Add to global parray tracker for easy cleanup
+  if (parray_append(__CLI_PARRAY_TRACKER, &ctx->flags, sizeof(c_parray_t**)) == NULL) exit(1);
+  if (parray_append(__CLI_PARRAY_TRACKER, &ctx->options, sizeof(c_parray_t**)) == NULL) exit (1);
 
-  parray_free(ctx->flags);
-  parray_free(ctx->options);
-
-  return result;
+  return __cli_exec_ctx(root, argc, argv, ctx);
 }
 
 int main(int argc, char **argv) {
