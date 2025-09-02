@@ -12,7 +12,7 @@ project_description = 'A hierarchical CLI library for C'
 project_url = 'https://github.com/smallblue2/cli'
 
 # Dependencies
-alctr_dep = dependency('allocators', required: true)
+alctr_dep = dependency('collections', required: true)
 
 # # build options
 # install_headers = get_option('install_headers')
